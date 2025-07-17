@@ -77,8 +77,11 @@ export class LoginComponent implements OnInit {
       next: res => {
         this.loading = false; // Stop loading on success
         this.msg = res.msg;
-        sessionStorage.setItem('token', res.token);
-        sessionStorage.setItem('user', JSON.stringify(res.user));
+        
+        this.auth.setMemoryToken(res.token); // Store token in memory
+        this.auth.setUserName(JSON.stringify(res.user)); // Store username in memory
+        // sessionStorage.setItem('token', res.token);
+        // sessionStorage.setItem('user', JSON.stringify(res.user));
         this.router.navigate(['/dashboard']);
       },
       error: err => {

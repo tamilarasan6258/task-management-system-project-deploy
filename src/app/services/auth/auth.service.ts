@@ -3,9 +3,9 @@ import { Injectable } from '@angular/core';
 import { Observable, Subscription, timer } from 'rxjs';
 import { Router } from '@angular/router';
 import { environment } from '../../../environments/environment';
-import { 
+import {
   RegisterRequest, LoginRequest, SendOTPRequest, VerifyOTPRequest, CheckUnameEmailRequest, CheckUnameRequest, UpdateUsernameRequest, ChangePasswordRequest,
-  RegisterResponse, LoginResponse, OTPSendResponse, OTPVerifyResponse , UnameEmailCheckResponse, UnameCheckResponse, UpdateUsernameResponse, ChangePasswordResponse
+  RegisterResponse, LoginResponse, OTPSendResponse, OTPVerifyResponse, UnameEmailCheckResponse, UnameCheckResponse, UpdateUsernameResponse, ChangePasswordResponse
 } from '../../models/auth.model';
 
 @Injectable({
@@ -15,22 +15,38 @@ import {
 export class AuthService {
   private apiUrl = environment.auth_apiBaseUrl;
   private tokenTimer?: Subscription;
+  private memorytoken: string | null = null; // to store token in memory
+  private username: string | null = null; // to store username in memory
 
-  private getTokenExpiration(): number | null 
-  {
-    const token = sessionStorage.getItem('token');
+
+  setMemoryToken(token: string | null): void {
+    this.memorytoken = token;
+  }
+
+  getMemoryToken(): string | null {
+    return this.memorytoken;
+  }
+
+  setUserName(name: string | null): void {
+    this.username = name;
+  }
+  getUserName(): string | null {
+    return this.username;
+  }
+  private getTokenExpiration(): number | null {
+    // const token = sessionStorage.getItem('token');
+    const token = this.getMemoryToken();
     if (!token) return null;
     try {
       const payload = JSON.parse(atob(token.split('.')[1]));
       return payload.exp;
-    } 
+    }
     catch {
       return null;
     }
   }
 
-  private startTokenWatcher() 
-  {
+  private startTokenWatcher() {
     const exp = this.getTokenExpiration();
     if (!exp) return;
 
@@ -42,21 +58,19 @@ export class AuthService {
     }
   }
 
-  private stopTokenWatcher() 
-  {
+  private stopTokenWatcher() {
     this.tokenTimer?.unsubscribe();
   }
 
-  private initTokenWatcher() 
-  {
+  private initTokenWatcher() {
     if (this.isAuthenticated()) {
       this.startTokenWatcher();
     }
   }
 
-  private updateStoredToken(newToken: string): void 
-  {
-    sessionStorage.setItem('token', newToken);
+  private updateStoredToken(newToken: string): void {
+    this.setMemoryToken(newToken); // Update memory token
+    // sessionStorage.setItem('token', newToken);
     this.stopTokenWatcher();
     this.startTokenWatcher();
   }
@@ -73,8 +87,10 @@ export class AuthService {
     return new Observable(observer => {
       this.http.post<LoginResponse>(`${this.apiUrl}/login`, userData).subscribe({
         next: res => {
-          sessionStorage.setItem('token', res.token);
-          sessionStorage.setItem('user', JSON.stringify(res.user));
+          this.setMemoryToken(res.token); // Store token in memory
+          // sessionStorage.setItem('token', res.token);
+          // sessionStorage.setItem('user', JSON.stringify(res.user));
+          this.setUserName(JSON.stringify(res.user)); // Store username in memory
           this.startTokenWatcher();             //starts token auto-expiry watcher
           observer.next(res);
           observer.complete();
@@ -97,7 +113,9 @@ export class AuthService {
   }
 
   checkUsername(userData: CheckUnameRequest): Observable<UnameCheckResponse> {
-    const token = sessionStorage.getItem('token');
+    // const token = sessionStorage.getItem('token');
+    const token = this.getMemoryToken();
+
     const headers = {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json'
@@ -123,7 +141,9 @@ export class AuthService {
   }
 
   updateUsername(newUsername: string): Observable<UpdateUsernameResponse> {
-    const token = sessionStorage.getItem('token');
+    // const token = sessionStorage.getItem('token');
+    const token = this.getMemoryToken();
+
     const headers = {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json'
@@ -134,26 +154,26 @@ export class AuthService {
     return new Observable(observer => {
       this.http.put<UpdateUsernameResponse>(
         `${this.apiUrl}/update-username`, payload, { headers }).subscribe({
-        next: res => {
-          if (res.token) {
-            this.updateStoredToken(res.token);
-          }
-          observer.next(res);
-          observer.complete();
-        },
-        error: err => observer.error(err)
-      });
+          next: res => {
+            if (res.token) {
+              this.updateStoredToken(res.token);
+            }
+            observer.next(res);
+            observer.complete();
+          },
+          error: err => observer.error(err)
+        });
     });
   }
 
-  updateUserData(updates: Partial<{ name: string; email: string }>): void 
-  {
+  updateUserData(updates: Partial<{ name: string; email: string }>): void {
     const userStr = sessionStorage.getItem('user');
     if (userStr) {
       try {
         const currentUser = JSON.parse(userStr);
         const updatedUser = { ...currentUser, ...updates };
-        sessionStorage.setItem('user', JSON.stringify(updatedUser));
+        // sessionStorage.setItem('user', JSON.stringify(updatedUser));
+        this.setUserName(JSON.stringify(updatedUser)); // Update username in memory
       } catch (error) {
         console.error('Error updating user data:', error);
       }
@@ -161,7 +181,9 @@ export class AuthService {
   }
 
   changePassword(currentPassword: string, newPassword: string): Observable<ChangePasswordResponse> {
-    const token = sessionStorage.getItem('token');
+    // const token = sessionStorage.getItem('token');
+    const token = this.getMemoryToken();
+
     const headers = {
       'Authorization': `Bearer ${token}`,
       'Content-Type': 'application/json'
@@ -175,8 +197,13 @@ export class AuthService {
 
 
   logout(): void {
-    sessionStorage.setItem('sessionExpired', 'true');   //marks session as expired
-    sessionStorage.clear();                             //clears session storage
+    // sessionStorage.setItem('sessionExpired', 'true');   //marks session as expired
+    // sessionStorage.clear();                             //clears session storage
+    // Clear access token from memory
+    this.memorytoken = null;
+
+    // Optionally also clear username or other info
+    this.username = null;
 
     this.stopTokenWatcher();                            //stops token watcher
     this.router.navigate(['/login'], {                  //navigate to login
@@ -185,20 +212,24 @@ export class AuthService {
   }
 
   isAuthenticated(): boolean {
-    const token = sessionStorage.getItem('token');
+    // const token = sessionStorage.getItem('token');
+    const token = this.getMemoryToken();
+
     if (!token) return false;                           //checks if the token is valid(if token-valid, not expired, exists)
 
     try {
       const payload = JSON.parse(atob(token.split('.')[1]));      //decoding/extracting the payload part of the JWT token(JWT token format : header.payload.signature)->to extract payload use[1]
       return payload.exp > Date.now() / 1000;                     //payload.exp-expiration time of token in seconds, Date.now()-current time
-                                                                  //if the exp time is in the future the token is still valid and return true
+      //if the exp time is in the future the token is still valid and return true
     } catch {
       return false;
     }
   }
 
   getCurrentUser(): { id: string; name: string; email: string } | null {
-    const token = sessionStorage.getItem('token');
+    // const token = sessionStorage.getItem('token');
+    const token = this.getMemoryToken();
+
     if (!token) return null;
 
     try {
